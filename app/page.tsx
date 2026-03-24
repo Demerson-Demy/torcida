@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { MapPin, Waves, Utensils, Phone, Trophy, CircleDot, User, Star, Sparkles } from 'lucide-react';
+import { MapPin, Waves, Utensils, Phone, Trophy, CircleDot, User, Star, Sparkles, CheckCircle2 } from 'lucide-react';
 import Image from 'next/image';
+import { supabase } from '@/lib/supabase';
 
 // Fixed values for floating elements moved outside to ensure absolute stability during hydration
 const FLOATING_ELEMENTS = [
@@ -21,6 +22,8 @@ export default function InvitationPage() {
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [isMounted, setIsMounted] = React.useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
   const whatsappNumber = "5511986472609";
 
   React.useEffect(() => {
@@ -30,6 +33,59 @@ export default function InvitationPage() {
   const getWhatsappUrl = () => {
     const baseMessage = `Olá Emily! ${guestName ? `Sou o(a) ${guestName}${guestPhone ? ` (Tel: ${guestPhone})` : ''} e c` : 'C'}onfirmo minha presença no seu aniversário de 14 anos! ⚽🔥`;
     return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(baseMessage)}`;
+  };
+
+  const handleConfirm = async (e: React.MouseEvent) => {
+    if (!guestName.trim()) {
+      alert('Por favor, digite seu nome para confirmar!');
+      return;
+    }
+
+    setIsLoading(true);
+    
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.warn('Supabase not configured. Proceeding to WhatsApp only.');
+      setIsConfirmed(true);
+      setTimeout(() => {
+        window.open(getWhatsappUrl(), '_blank');
+      }, 1000);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Save to Supabase
+      const { error } = await supabase
+        .from('rsvps')
+        .insert([
+          { 
+            guest_name: guestName, 
+            guest_phone: guestPhone 
+          }
+        ]);
+
+      if (error) throw error;
+
+      setIsConfirmed(true);
+      
+      // Open WhatsApp after a short delay to show success
+      setTimeout(() => {
+        window.open(getWhatsappUrl(), '_blank');
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Erro ao confirmar:', error);
+      alert('Houve um erro ao confirmar sua presença. Tente novamente!');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setGuestName('');
+    setGuestPhone('');
+    setIsConfirmed(false);
+    setIsLoading(false);
   };
 
   return (
@@ -233,7 +289,8 @@ export default function InvitationPage() {
                       placeholder="Digite seu nome..."
                       value={guestName}
                       onChange={(e) => setGuestName(e.target.value)}
-                      className="w-full px-4 py-3 bg-zinc-800 border-2 border-zinc-700 rounded-xl focus:border-red-600 focus:outline-none transition-all font-bold text-white placeholder:text-zinc-600"
+                      disabled={isLoading || isConfirmed}
+                      className="w-full px-4 py-3 bg-zinc-800 border-2 border-zinc-700 rounded-xl focus:border-red-600 focus:outline-none transition-all font-bold text-white placeholder:text-zinc-600 disabled:opacity-50"
                     />
                   )}
                 </div>
@@ -248,21 +305,45 @@ export default function InvitationPage() {
                       placeholder="(00) 00000-0000"
                       value={guestPhone}
                       onChange={(e) => setGuestPhone(e.target.value)}
-                      className="w-full px-4 py-3 bg-zinc-800 border-2 border-zinc-700 rounded-xl focus:border-red-600 focus:outline-none transition-all font-bold text-white placeholder:text-zinc-600"
+                      disabled={isLoading || isConfirmed}
+                      className="w-full px-4 py-3 bg-zinc-800 border-2 border-zinc-700 rounded-xl focus:border-red-600 focus:outline-none transition-all font-bold text-white placeholder:text-zinc-600 disabled:opacity-50"
                     />
                   )}
                 </div>
               </div>
 
-              <a 
-                href={getWhatsappUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full group relative flex items-center justify-center gap-3 px-8 py-4 bg-red-600 text-white font-black uppercase italic tracking-tighter rounded-xl md:rounded-2xl hover:bg-white hover:text-red-600 transition-all shadow-lg active:scale-95"
+              <button 
+                onClick={handleConfirm}
+                disabled={isLoading || isConfirmed}
+                className={`w-full group relative flex items-center justify-center gap-3 px-8 py-4 font-black uppercase italic tracking-tighter rounded-xl md:rounded-2xl transition-all shadow-lg active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed ${
+                  isConfirmed 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-red-600 text-white hover:bg-white hover:text-red-600'
+                }`}
               >
-                <Phone size={20} className="group-hover:rotate-12 transition-transform" />
-                <span className="text-lg md:text-xl">Confirmar no Zap</span>
-              </a>
+                {isLoading ? (
+                  <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />
+                ) : isConfirmed ? (
+                  <>
+                    <CheckCircle2 size={20} />
+                    <span className="text-lg md:text-xl">Escalação Confirmada!</span>
+                  </>
+                ) : (
+                  <>
+                    <Phone size={20} className="group-hover:rotate-12 transition-transform" />
+                    <span className="text-lg md:text-xl">Confirmar no Zap</span>
+                  </>
+                )}
+              </button>
+
+              {isConfirmed && (
+                <button 
+                  onClick={resetForm}
+                  className="text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-red-500 transition-colors mx-auto mt-2"
+                >
+                  Confirmar outra presença
+                </button>
+              )}
             </motion.div>
           </motion.div>
         </div>
